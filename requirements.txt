@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+fastmcp
+redis
+pydantic-settings
+python-dotenv
+httpx
+typer[all]
+requests
+typer
+cryptography
