@@ -151,36 +151,34 @@ MCP Plexus sits as an ASGI application (typically run with Uvicorn) and acts as 
    
    **Example `.env`:**
    ```env
-  # MCP Plexus Environment Variables
-
-  # Uvicorn Development Server
-  DEV_SERVER_HOST=127.0.0.1
-  DEV_SERVER_PORT=8000
-  DEV_SERVER_LOG_LEVEL=info
-  DEV_SERVER_RELOAD=True
-
-  # Application Settings
-  APP_NAME=MCP Plexus Server
-  DEBUG_MODE=True
-
-  REDIS_HOST=localhost
-  REDIS_PORT=6379
-  REDIS_DB=0
-  # REDIS_PASSWORD=
-  # REDIS_SSL=False
-
-  PLEXUS_FASTMCP_LOG_LEVEL="DEBUG"
-
-  STORAGE_BACKEND=sqlite
-  SQLITE_DB_PATH=./mcp_plexus_data.sqlite3
-
-  HOST_APP_REGISTRATION_SECRET=host_app_secre
-
-  ADMIN_API_KEY=your_super_secret_admin_api_key_here_12345
-
-  PLEXUS_CLI_API_BASE_URL=http://127.0.0.1:8000
-
-  PLEXUS_ENCRYPTION_KEY=your_generated_fernet_key_here # see mcp_plexus/utils/generate_key.py
+    # Uvicorn Development Server
+    DEV_SERVER_HOST=127.0.0.1
+    DEV_SERVER_PORT=8000
+    DEV_SERVER_LOG_LEVEL=info
+    DEV_SERVER_RELOAD=True
+  
+    # Application Settings
+    APP_NAME=MCP Plexus Server
+    DEBUG_MODE=True
+  
+    REDIS_HOST=localhost
+    REDIS_PORT=6379
+    REDIS_DB=0
+    # REDIS_PASSWORD=
+    # REDIS_SSL=False
+  
+    PLEXUS_FASTMCP_LOG_LEVEL="DEBUG"
+  
+    STORAGE_BACKEND=sqlite
+    SQLITE_DB_PATH=./mcp_plexus_data.sqlite3
+  
+    HOST_APP_REGISTRATION_SECRET=host_app_secre
+  
+    ADMIN_API_KEY=your_super_secret_admin_api_key_here_12345
+  
+    PLEXUS_CLI_API_BASE_URL=http://127.0.0.1:8000
+  
+    PLEXUS_ENCRYPTION_KEY=your_generated_fernet_key_here # see mcp_plexus/utils/generate_key.py
 
    ```
 
