@@ -238,8 +238,7 @@ class PlexusContext(FastMCPContext):
             logger.warning(f"CONTEXT: No refresh token found or not a string for provider {provider_name}. Cannot refresh. (Type: {type(refresh_token)})")
             return None
 
-        # Note: verify=False is used for development/testing with SSL issues
-        async with httpx.AsyncClient(timeout=20.0, verify=False) as http_client: 
+        async with httpx.AsyncClient(timeout=20.0) as http_client: 
             try:
                 refresh_payload = {
                     "grant_type": "refresh_token", 
@@ -435,7 +434,7 @@ class PlexusContext(FastMCPContext):
                     if plexus_session_manager_instance: 
                         await plexus_session_manager_instance.save_session(session_data_from_manager) 
                 logger.info(f"CONTEXT: Using valid existing token for {provider_name}.")
-                return httpx.AsyncClient(headers={"Authorization": f"Bearer {access_token_value}"}, verify=False) 
+                return httpx.AsyncClient(headers={"Authorization": f"Bearer {access_token_value}"}) 
             
             # Attempt token refresh if expired but scopes are OK and refresh token exists
             if is_expired and scopes_ok and token_info.get("refresh_token"):
@@ -446,7 +445,7 @@ class PlexusContext(FastMCPContext):
                 )
                 if refreshed_token_bundle and refreshed_token_bundle.get("access_token"):
                     logger.info(f"CONTEXT: Token refresh successful for {provider_name}.")
-                    return httpx.AsyncClient(headers={"Authorization": f"Bearer {refreshed_token_bundle['access_token']}"}, verify=False) 
+                    return httpx.AsyncClient(headers={"Authorization": f"Bearer {refreshed_token_bundle['access_token']}"}) 
                 else:
                     logger.warning(f"CONTEXT: Token refresh FAILED for {provider_name}. Will proceed to full auth flow.")
             elif is_expired:
