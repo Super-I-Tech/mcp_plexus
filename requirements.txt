@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-fastmcp
+fastmcp==2.7
 redis
 pydantic-settings
 python-dotenv

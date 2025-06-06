@@ -550,11 +550,19 @@ async def external_oauth_callback(
         # Extract token information
         access_token = parsed_token_data.get("access_token")
         refresh_token = parsed_token_data.get("refresh_token")
-        expires_in_str = parsed_token_data.get("expires_in")
+        expires_in_value = parsed_token_data.get("expires_in") # Get the value
         granted_scopes_str = parsed_token_data.get("scope") 
-        
-        expires_in = int(expires_in_str) if expires_in_str and expires_in_str.isdigit() else None
-        expires_at_dt = datetime.now(timezone.utc) + timedelta(seconds=expires_in) if isinstance(expires_in, int) else None
+
+        expires_at_dt = None
+        if expires_in_value is not None:
+            try:
+                # Try to convert to int, this handles both string and int cases gracefully.
+                # If it's already an int, int() is a no-op. If it's a string "3600", it's converted.
+                expires_in_seconds = int(expires_in_value) 
+                expires_at_dt = datetime.now(timezone.utc) + timedelta(seconds=expires_in_seconds)
+            except ValueError:
+                logger.warning(f"Could not convert expires_in_value '{expires_in_value}' to an integer.")
+                expires_at_dt = None # Or handle error appropriately
         granted_scopes_list = list(set(
             s.strip() for s in (granted_scopes_str or "").replace(',', ' ').split() if s.strip()
         ))

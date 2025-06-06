@@ -19,8 +19,9 @@ def requires_auth(provider_name: str, scopes: Optional[List[str]] = None) -> Cal
     """
     Decorator that ensures an OAuth provider is authenticated before executing a tool.
     
-    Extracts the FastMCP context from function arguments, creates a PlexusContext,
-    and injects an authenticated HTTP client for the specified provider.
+    This decorator injects an authenticated HTTP client into the wrapped function
+    and attaches metadata to allow FastMCP's tool schema generator to exclude
+    the injected argument from the public API schema.
     
     Args:
         provider_name: Name of the OAuth provider (e.g., 'google', 'github')
@@ -56,7 +57,8 @@ def requires_auth(provider_name: str, scopes: Optional[List[str]] = None) -> Cal
             try:
                 if not hasattr(base_ctx_arg, 'fastmcp') or base_ctx_arg.fastmcp is None:
                      raise RuntimeError(
-                         f"PlexusContext setup failed due to missing server instance on base context for {func.__name__}."
+                         f"PlexusContext setup failed due to missing server instance "
+                         f"on base context for {func.__name__}."
                      )
                 
                 plexus_ctx = PlexusContext(base_ctx_arg.fastmcp)
@@ -77,7 +79,8 @@ def requires_auth(provider_name: str, scopes: Optional[List[str]] = None) -> Cal
                 if not isinstance(auth_client, httpx.AsyncClient):
                     raise RuntimeError(f"Internal error: OAuth client for '{provider_name}' is not valid.")
 
-                kwargs['authenticated_client'] = auth_client
+                # Inject authenticated client into function kwargs
+                kwargs['_authenticated_client'] = auth_client
                 return await func(*args, **kwargs)
 
             except PlexusExternalAuthRequiredError as auth_err:
@@ -88,10 +91,24 @@ def requires_auth(provider_name: str, scopes: Optional[List[str]] = None) -> Cal
                 error_json_string = json.dumps(error_payload_for_mcp)
                 raise ToolError(error_json_string)
             except RuntimeError as rt_err: 
-                logger.error(f"RuntimeError in auth processing for '{func.__name__}': {rt_err}", exc_info=True) 
+                logger.error(
+                    f"RuntimeError in auth processing for '{func.__name__}': {rt_err}", 
+                    exc_info=True
+                ) 
                 raise rt_err 
             except Exception as e: 
-                logger.error(f"Unexpected error in @requires_auth for '{func.__name__}': {e}", exc_info=True)
+                logger.error(
+                    f"Unexpected error in @requires_auth for '{func.__name__}': {e}", 
+                    exc_info=True
+                )
                 raise 
-        return wrapper # type: ignore
+        
+        # Attach metadata to allow MCPPlexusServer.tool decorator to exclude injected arguments
+        # from the public API schema
+        if not hasattr(wrapper, '_plexus_exclude_args'):
+            setattr(wrapper, '_plexus_exclude_args', [])
+        
+        getattr(wrapper, '_plexus_exclude_args').append("_authenticated_client")
+
+        return wrapper  # type: ignore
     return decorator
