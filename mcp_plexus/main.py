@@ -45,13 +45,13 @@ from .plexus_auth.storage_interfaces import AbstractPlexusUserAuthTokenStore
 from .plexus_auth.sqlite_user_auth_token_store import get_sqlite_plexus_user_auth_token_store
 from .plexus_auth.token_manager import DefaultPlexusUserTokenManager, PlexusUserTokenManagerProtocol
 
-# Conditional imports for MCP functionality
+# Conditional imports for MCP functionality - these may not be available in all environments
 StreamableHTTPSessionManager = None
 set_http_request_cm = None 
 try:
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     logging.info("Imported StreamableHTTPSessionManager.")
-    try: 
+    try:  
         from fastmcp.server.http import set_http_request as fastmcp_set_http_request_cm
         set_http_request_cm = fastmcp_set_http_request_cm
         logging.info("Imported set_http_request from fastmcp.server.http.")
@@ -62,7 +62,7 @@ try:
 except ImportError as e:
     logging.error(f"Failed to import StreamableHTTPSessionManager: {e}.", exc_info=True)
 
-# Initialize logging configuration
+# Configure logging based on debug mode setting
 if not logging.getLogger().hasHandlers():
     logging.basicConfig(
         level="DEBUG" if settings.debug_mode else "INFO", 
@@ -72,7 +72,7 @@ if not logging.getLogger().hasHandlers():
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG if settings.debug_mode else logging.INFO)
 
-# Global instances for dependency injection
+# Global instances for dependency injection - initialized during application startup
 plexus_session_manager_instance: Optional[PlexusSessionManager] = None
 plexus_fastmcp_http_session_manager: Optional[StreamableHTTPSessionManager] = None # type: ignore
 plexus_user_auth_token_store_instance: Optional[AbstractPlexusUserAuthTokenStore] = None
@@ -84,7 +84,7 @@ user_external_token_store_instance: Optional[AbstractUserExternalTokenStore] = N
 internal_oauth_client_store_instance: Optional[AbstractOAuthClientStore] = None 
 plexus_tenant_store_instance: Optional[AbstractTenantStore] = None
 
-# Initialize FastMCP HTTP session manager if available
+# Initialize FastMCP HTTP session manager if MCP components are available
 if StreamableHTTPSessionManager:
     actual_mcp_server_app_for_manager = None
     if hasattr(shared_fastmcp_server_instance, "_mcp_server") and shared_fastmcp_server_instance._mcp_server:
@@ -104,7 +104,8 @@ else:
 async def plexns_app_lifespan(app_instance: FastAPI):
     """
     Application lifespan manager that handles initialization and cleanup of all storage backends,
-    session managers, and MCP components.
+    session managers, and MCP components. This ensures proper resource management throughout
+    the application lifecycle.
     """
     global plexus_session_manager_instance, plexus_fastmcp_http_session_manager
     global internal_oauth_token_store_instance, internal_auth_code_store_instance
@@ -117,7 +118,7 @@ async def plexns_app_lifespan(app_instance: FastAPI):
     initialized_stores = []
     
     try:
-        # Initialize storage backend
+        # Initialize primary storage backend based on configuration
         if settings.storage_backend == "sqlite":
             await get_sqlite_db_connection() 
             logger.info("SQLite backend selected and connection initialized.")
@@ -130,7 +131,7 @@ async def plexns_app_lifespan(app_instance: FastAPI):
         logger.error(f"Error during storage backend initialization: {e}", exc_info=True)
         raise
 
-    # Initialize session manager - currently requires Redis for MCP sessions
+    # Initialize session manager - MCP sessions currently require Redis for persistence
     if settings.storage_backend == "redis": 
         redis_session_store = RedisPlexusSessionStore()
         await redis_session_store.initialize()
@@ -138,7 +139,7 @@ async def plexns_app_lifespan(app_instance: FastAPI):
         initialized_stores.append(redis_session_store) 
         logger.info("PlexusSessionManager (Redis-backed) initialized.")
     elif settings.storage_backend == "sqlite":
-        # SQLite session store not yet implemented, falling back to Redis
+        # SQLite session store not yet implemented, falling back to Redis for MCP compatibility
         logger.warning("SQLite backend selected but sessions currently require Redis. Using RedisPlexusSessionStore.")
         redis_session_store = RedisPlexusSessionStore() 
         await redis_session_store.initialize()
@@ -148,13 +149,13 @@ async def plexns_app_lifespan(app_instance: FastAPI):
     else: 
         raise ValueError(f"Unsupported storage_backend for session manager: {settings.storage_backend}")
 
-    # Initialize authentication components
+    # Initialize authentication components for user token management
     plexus_user_auth_token_store_instance = await get_sqlite_plexus_user_auth_token_store()
     plexus_user_token_manager_instance = DefaultPlexusUserTokenManager()
     initialized_stores.append(plexus_user_auth_token_store_instance)
     logger.info("Plexus User Authentication components initialized.")
     
-    # Initialize OAuth data stores
+    # Initialize OAuth data stores for internal and external OAuth flows
     internal_oauth_token_store_instance = await get_internal_oauth_token_store()
     internal_auth_code_store_instance = await get_internal_auth_code_store()
     external_oauth_provider_config_store_instance = await get_external_oauth_provider_config_store()
@@ -167,7 +168,7 @@ async def plexns_app_lifespan(app_instance: FastAPI):
     ])
     logger.info("All OAuth data stores initialized.")
     
-    # Initialize tenant store
+    # Initialize tenant store for multi-tenant support
     plexus_tenant_store_instance = await get_sqlite_tenant_store() 
     if plexus_tenant_store_instance: 
         await plexus_tenant_store_instance.initialize() 
@@ -176,7 +177,7 @@ async def plexns_app_lifespan(app_instance: FastAPI):
     else:
         logger.error("plexus_tenant_store_instance is None. Tenant validation will fail.")
 
-    # Create default OAuth client for testing
+    # Create default OAuth client for testing and development
     from .oauth.models import OAuthClient 
     if internal_oauth_client_store_instance:
         test_client_id = "plexus-test-client"
@@ -191,7 +192,7 @@ async def plexns_app_lifespan(app_instance: FastAPI):
         await internal_oauth_client_store_instance.save_client(default_plexus_test_client)
         logger.info(f"Default OAuth client '{test_client_id}' configured.")
     
-    # Run FastMCP HTTP manager if available
+    # Run FastMCP HTTP manager if available - this manages MCP protocol sessions
     if plexus_fastmcp_http_session_manager and hasattr(plexus_fastmcp_http_session_manager, "run"):        
         try:
             async with plexus_fastmcp_http_session_manager.run(): 
@@ -204,7 +205,7 @@ async def plexns_app_lifespan(app_instance: FastAPI):
         logger.warning("FastMCP manager not runnable. Proceeding without it.")
         yield 
     
-    # Cleanup phase
+    # Cleanup phase - ensure all resources are properly released
     logger.info("Application shutdown initiated.")
     for store_instance in reversed(initialized_stores):
         try:
@@ -219,7 +220,8 @@ async def plexns_app_lifespan(app_instance: FastAPI):
 class ResponseHandled(StarletteResponse):
     """
     A response class indicating that the response has been handled elsewhere
-    and no further processing is needed.
+    and no further processing is needed. Used to signal that the MCP endpoint
+    has already sent the response through its own mechanisms.
     """
     def __init__(self):
         super().__init__(content=b"", media_type="text/plain")
@@ -230,7 +232,8 @@ class ResponseHandled(StarletteResponse):
 class PlexusMCPEndpoint(HTTPEndpoint):
     """
     HTTP endpoint that handles MCP (Model Context Protocol) requests with authentication
-    and session management. Supports both header-based and URL-based token authentication.
+    and session management. Supports both header-based and URL-based token authentication
+    for secure multi-tenant MCP operations.
     """
     
     async def _extract_and_validate_plexus_token(self, request: StarletteRequest, entity_id: str) -> Optional[str]:
@@ -264,7 +267,9 @@ class PlexusMCPEndpoint(HTTPEndpoint):
     async def _dispatch_mcp_request(self, scope: Scope, receive: Receive, send: Send) -> None:
         """
         Main request dispatcher that handles authentication, session management,
-        and routing to the appropriate MCP handler.
+        and routing to the appropriate MCP handler. This method orchestrates the
+        entire MCP request lifecycle including tenant validation, authentication,
+        session management, and response handling.
         """
         from .core.global_registry import PLEXUS_SERVER_INSTANCE
         
@@ -274,7 +279,7 @@ class PlexusMCPEndpoint(HTTPEndpoint):
         dispatch_logger = logging.getLogger(f"{__name__}._dispatch_mcp_request")
         dispatch_logger.setLevel(logging.DEBUG if settings.debug_mode else logging.INFO)
 
-        # Variables to track request state
+        # Variables to track request state and special handling requirements
         handle_tools_list_manually: bool = False
         tools_list_filter_param: Optional[str] = None
         tools_list_json_rpc_id: Union[str, int, None] = None
@@ -282,8 +287,8 @@ class PlexusMCPEndpoint(HTTPEndpoint):
         authoritative_mcp_session_id: Optional[str] = None 
         session_data_for_this_dispatch: Optional[SessionData] = None
         request_handling_exception: Optional[Exception] = None
-        
-        # Validate tenant exists and is active
+         
+        # Validate tenant exists and is active before processing any MCP requests
         if plexus_tenant_store_instance:
             tenant = await plexus_tenant_store_instance.get_tenant_by_entity_id(entity_id_from_path)
             if not tenant:
@@ -300,7 +305,6 @@ class PlexusMCPEndpoint(HTTPEndpoint):
                 )
                 await error_response(scope, receive, send)
                 return
-            dispatch_logger.debug(f"Tenant '{entity_id_from_path}' validated.")
         else:
             error_response = JSONResponse(
                 status_code=503, 
@@ -309,20 +313,18 @@ class PlexusMCPEndpoint(HTTPEndpoint):
             await error_response(scope, receive, send)
             return
 
-        # Extract MCP session ID from headers
+        # Extract MCP session ID from headers for session continuity
         original_mcp_session_id_from_header: Optional[str] = None
         for k, v_bytes in scope.get("headers", []):
             if k.lower() == b"mcp-session-id":
                 original_mcp_session_id_from_header = v_bytes.decode("utf-8", errors="ignore")
                 break
-        
-        dispatch_logger.debug(f"Processing request for entity '{entity_id_from_path}', session '{original_mcp_session_id_from_header}'")
 
         if not plexus_session_manager_instance:
             await JSONResponse({"error":"Session manager unavailable"}, status_code=503)(scope,receive,send)
             return
 
-        # Prepare scope for MCP processing
+        # Prepare scope for MCP processing with entity context
         scope_for_mcp = scope.copy()
         current_scope_state: Dict[str, Any] = scope_for_mcp.get("state", {}) 
         if not isinstance(current_scope_state, dict):
@@ -330,16 +332,15 @@ class PlexusMCPEndpoint(HTTPEndpoint):
         scope_for_mcp["state"] = current_scope_state
         scope_for_mcp["state"]["entity_id"] = entity_id_from_path
         
-        # Authentication processing
+        # Authentication processing - support both header and URL token methods
         derived_persistent_user_id: Optional[str] = None
-        auth_method_used: Optional[str] = None
 
         starlette_request_for_header_check = StarletteRequest(scope)
         plexus_user_auth_token_from_header = await self._extract_and_validate_plexus_token(
             starlette_request_for_header_check, entity_id_from_path
         )
 
-        # Check for multiple authentication methods
+        # Ensure only one authentication method is used to prevent confusion
         if plexus_user_auth_token_from_header:
             if token_from_url_path:
                 await JSONResponse(
@@ -350,28 +351,12 @@ class PlexusMCPEndpoint(HTTPEndpoint):
             derived_persistent_user_id = await self._get_persistent_user_id_from_token(
                 entity_id_from_path, plexus_user_auth_token_from_header
             )
-            auth_method_used = "Header"
-            if not derived_persistent_user_id:
-                await JSONResponse(
-                    {"error":"invalid_token", "error_description":"Invalid auth token via Header."}, 
-                    status_code=401
-                )(scope,receive,send)
-                return
-            dispatch_logger.info(f"Authentication successful via header for entity {entity_id_from_path}")
         elif token_from_url_path:
             derived_persistent_user_id = await self._get_persistent_user_id_from_token(
                 entity_id_from_path, token_from_url_path
             )
-            auth_method_used = "URL"
-            if not derived_persistent_user_id:
-                await JSONResponse(
-                    {"error":"invalid_token", "error_description":"Invalid auth token via URL."}, 
-                    status_code=401
-                )(scope,receive,send)
-                return
-            dispatch_logger.info(f"Authentication successful via URL token for entity {entity_id_from_path}")
         
-        # Peek at request body for method detection and authorization
+        # Peek at request body for method detection and authorization checks
         is_currently_initialize_req = False
         first_chunk_message_storage = {'message': None}
 
@@ -386,7 +371,7 @@ class PlexusMCPEndpoint(HTTPEndpoint):
                 more_body_flag = current_chunk_to_process.get('more_body', False)
                 temp_body_for_check += body_chunk_content
                 
-                # Parse JSON for method detection if we have enough data
+                # Parse JSON body to determine MCP method and handle special cases
                 if not more_body_flag or len(temp_body_for_check) > 20: 
                     try:
                         json_body_for_method_check = json.loads(temp_body_for_check.decode('utf-8'))
@@ -398,20 +383,18 @@ class PlexusMCPEndpoint(HTTPEndpoint):
                             
                             if method == "initialize":
                                 is_currently_initialize_req = True
-                                dispatch_logger.info("Initialize request detected.")
                             elif method == "tools/list":
+                                # Handle tools/list manually for tenant-specific filtering
                                 handle_tools_list_manually = True
                                 tools_list_json_rpc_id = json_body_for_method_check.get("id")
                                 if isinstance(json_body_for_method_check.get("params"), dict):
                                     tools_list_filter_param = json_body_for_method_check["params"].get("tool_set_filter")
-                                dispatch_logger.info(f"Tools list request detected with filter: {tools_list_filter_param}")
                             elif method == "tools/call":
-                                # Authorize tool calls
+                                # Validate tool authorization before allowing execution
                                 tool_name_to_call = json_body_for_method_check.get("params", {}).get("name")
                                 if tool_name_to_call:
                                     current_plexus_server_for_check = PLEXUS_SERVER_INSTANCE
                                     if not current_plexus_server_for_check or not hasattr(current_plexus_server_for_check, 'can_tenant_call_tool'):
-                                        dispatch_logger.error("PLEXUS_SERVER_INSTANCE lacks 'can_tenant_call_tool' method.")
                                         await JSONResponse(
                                             {"error":"server_configuration_error", "detail": "Tool auth check failed."}, 
                                             status_code=500
@@ -419,7 +402,6 @@ class PlexusMCPEndpoint(HTTPEndpoint):
                                         return
                                     
                                     if not await current_plexus_server_for_check.can_tenant_call_tool(entity_id_from_path, tool_name_to_call):
-                                        dispatch_logger.warning(f"Tool call authorization failed for '{tool_name_to_call}'")
                                         resp_payload = {
                                             "jsonrpc": "2.0", 
                                             "id": json_body_for_method_check.get("id"), 
@@ -427,11 +409,11 @@ class PlexusMCPEndpoint(HTTPEndpoint):
                                         }
                                         await JSONResponse(resp_payload, status_code=403)(scope, receive, send)
                                         return 
-                    except Exception as e_peek:
-                        dispatch_logger.debug(f"Body parsing failed: {e_peek}")
+                    except Exception:
+                        pass
             
             async def receive_instrumented() -> Dict[str, Any]:
-                """Return cached first message or get next message."""
+                """Return cached first message or get next message from stream."""
                 if first_chunk_message_storage['message']:
                     msg, first_chunk_message_storage['message'] = first_chunk_message_storage['message'], None
                     return msg
@@ -440,18 +422,13 @@ class PlexusMCPEndpoint(HTTPEndpoint):
             async def receive_instrumented() -> Dict[str, Any]:
                 return await receive()
 
-        # Enforce authentication requirements
+        # Enforce authentication requirements for all MCP operations
         if not derived_persistent_user_id:
             json_body_for_final_auth_check: Optional[Dict[str, Any]] = None
-            if (scope['method'] == 'POST' and first_chunk_message_storage['message'] and 
-                first_chunk_message_storage['message']['type'] == 'http.request' and 
-                first_chunk_message_storage['message'].get('body')):
-                try: 
-                    json_body_for_final_auth_check = json.loads(
-                        first_chunk_message_storage['message']['body'].decode('utf-8')
-                    )
-                except: 
-                    pass 
+            try: 
+                json_body_for_final_auth_check = json.loads(temp_body_for_check.decode('utf-8'))
+            except: 
+                pass 
             
             is_init_final_check = bool(
                 json_body_for_final_auth_check and 
@@ -469,13 +446,13 @@ class PlexusMCPEndpoint(HTTPEndpoint):
             else:
                 err_payload = {"error":"authentication_required", "error_description":msg}
             
-            dispatch_logger.warning(f"Authentication required for entity {entity_id_from_path}")
             await JSONResponse(err_payload, status_code=401)(scope,receive,send)
             return
 
         async def send_wrapper(message: Dict[Any, Any]):
             """
             Wrapper for send that manages session state and MCP session IDs.
+            This ensures proper session tracking and persistence across MCP interactions.
             """
             nonlocal response_started, session_data_for_this_dispatch, authoritative_mcp_session_id
             send_wrapper_logger = logging.getLogger(__name__ + ".send_wrapper")
@@ -483,8 +460,7 @@ class PlexusMCPEndpoint(HTTPEndpoint):
             
             if message["type"] == "http.response.start":
                 if response_started:
-                    send_wrapper_logger.error("Attempted duplicate response start. Suppressing.")
-                    return 
+                    return                 
                 response_started = True
                 
                 # Extract MCP session ID from response headers
@@ -493,171 +469,107 @@ class PlexusMCPEndpoint(HTTPEndpoint):
                 authoritative_mcp_session_id_from_fmcp = hdrs_out_dict.get("mcp-session-id")
                 
                 if not authoritative_mcp_session_id_from_fmcp:
-                    send_wrapper_logger.error("FastMCP missing Mcp-Session-Id header. Using fallback.")
+                    # Fallback to original session ID or generate new one
                     authoritative_mcp_session_id_from_fmcp = (
                         original_mcp_session_id_from_header or 
                         f"error_fmcp_sid_missing_{uuid4().hex[:6]}"
                     )
-                authoritative_mcp_session_id = authoritative_mcp_session_id_from_fmcp 
-                send_wrapper_logger.info(f"Authoritative MCP session ID: {authoritative_mcp_session_id}")
+                authoritative_mcp_session_id = authoritative_mcp_session_id_from_fmcp
 
-                # Manage session data
+                # Retrieve or create session data for this MCP session
                 if plexus_session_manager_instance:
                     session_data_for_this_dispatch, _ = await plexus_session_manager_instance.get_session(
                         entity_id_from_path, authoritative_mcp_session_id
                     )
-                    send_wrapper_logger.info(f"Session data retrieved for MCP session {authoritative_mcp_session_id}")
                     
                     # Align session with authenticated user
                     if derived_persistent_user_id and session_data_for_this_dispatch.persistent_user_id != derived_persistent_user_id:
                         session_data_for_this_dispatch.persistent_user_id = derived_persistent_user_id
-                        send_wrapper_logger.info(f"Session aligned to user {derived_persistent_user_id}")
                     
-                    # Touch session for initialize requests
+                    # Update session timestamp for initialize requests
                     if is_currently_initialize_req:
                         session_data_for_this_dispatch.touch()
-                        send_wrapper_logger.info("Session touched for initialize request")
                 
-                # Update scope state with session data
+                # Store session data in scope for access by other components
                 if session_data_for_this_dispatch: 
                     current_scope_state["plexus_session_data"] = session_data_for_this_dispatch 
                     current_scope_state["mcp_session_id"] = session_data_for_this_dispatch.mcp_session_id
                 
-                # Ensure MCP session ID is in response headers
+                # Ensure MCP session ID is properly set in response headers
                 final_hdrs = [(k, v) for k, v in hdrs_out_bytes if k.lower() != b'mcp-session-id']
                 if authoritative_mcp_session_id:
                     final_hdrs.append((b'mcp-session-id', authoritative_mcp_session_id.encode('utf-8')))
                 message['headers'] = final_hdrs
             
-            send_wrapper_logger.debug(f"Sending ASGI message type: {message.get('type')}")
             try:
                 await send(message) 
             except Exception as e_send_exc:
                 send_wrapper_logger.error(f"Exception during send: {e_send_exc}", exc_info=True)
                 raise 
-            
-            if message["type"] == "http.response.body" and not message.get("more_body", False):
-                send_wrapper_logger.info(f"End of response body for session {authoritative_mcp_session_id}")
         
-        # Handle tools/list requests manually for scoping
-        if handle_tools_list_manually:
-            dispatch_logger.info(f"Manually handling tools/list for entity {entity_id_from_path}")
-            from .core.global_registry import PLEXUS_SERVER_INSTANCE as current_plexus_server
-            
-            if not current_plexus_server or not hasattr(current_plexus_server, 'get_mcp_tools_list_for_tenant'):
-                dispatch_logger.error("PLEXUS_SERVER_INSTANCE invalid for manual tools/list.")
-                await JSONResponse({
-                    "jsonrpc": "2.0", 
-                    "id": tools_list_json_rpc_id, 
-                    "error": {"code": -32002, "message": "Server config error."}
-                }, status_code=500)(scope,receive,send)
-                return
-
-            scoped_tools = await current_plexus_server.get_mcp_tools_list_for_tenant(
-                entity_id=entity_id_from_path, 
-                tool_set_filter=tools_list_filter_param, 
-                mcp_session_id=authoritative_mcp_session_id
-            )
-            
-            hdrs_out = []
-            if authoritative_mcp_session_id:
-                hdrs_out.append((b'mcp-session-id', authoritative_mcp_session_id.encode('utf-8')))
-            else: 
-                temp_sid_tl = original_mcp_session_id_from_header or uuid4().hex 
-                hdrs_out.append((b'mcp-session-id', temp_sid_tl.encode('utf-8')))
-                authoritative_mcp_session_id = temp_sid_tl
-            
-            await send_wrapper({
-                "type": "http.response.start", 
-                "status": 200, 
-                "headers": hdrs_out + [(b"content-type", b"application/json")]
-            })
-            
-            tools_list_resp = {
-                "jsonrpc": "2.0", 
-                "id": tools_list_json_rpc_id, 
-                "result": {"tools": [t.model_dump(exclude_none=True) for t in scoped_tools]}
-            }
-            await send_wrapper({
-                "type": "http.response.body", 
-                "body": json.dumps(tools_list_resp).encode("utf-8"), 
-                "more_body": False
-            })
-            dispatch_logger.info(f"Sent {len(scoped_tools)} tools in tools/list response")
-        else: 
-            # Validate FastMCP components are available
-            if not plexus_fastmcp_http_session_manager:
-                await JSONResponse({"error":"MCP handler unavailable"}, status_code=503)(scope, receive, send)
-                return 
-            if not set_http_request_cm:
-                await JSONResponse({"error":"Server config error (set_http_request_cm)."}, status_code=500)(scope, receive, send)
-                return 
-        
+        # Main request processing logic
         try:
-            try:
-                request_handling_exception = None 
-                dispatch_logger.debug("Dispatching to FastMCP")
+            if handle_tools_list_manually:
+                # Handle tools/list requests with tenant-specific filtering
+                from .core.global_registry import PLEXUS_SERVER_INSTANCE as current_plexus_server
+                
+                if not current_plexus_server or not hasattr(current_plexus_server, 'get_mcp_tools_list_for_tenant'):
+                    await JSONResponse({"jsonrpc": "2.0", "id": tools_list_json_rpc_id, "error": {"code": -32002, "message": "Server config error."}}, status_code=500)(scope,receive,send)
+                    return
+
+                scoped_tools = await current_plexus_server.get_mcp_tools_list_for_tenant(
+                    entity_id=entity_id_from_path, 
+                    tool_set_filter=tools_list_filter_param, 
+                    mcp_session_id=authoritative_mcp_session_id
+                )
+                
+                # Prepare response headers with session ID
+                hdrs_out = []
+                if authoritative_mcp_session_id:
+                    hdrs_out.append((b'mcp-session-id', authoritative_mcp_session_id.encode('utf-8')))
+                else: 
+                    temp_sid_tl = original_mcp_session_id_from_header or uuid4().hex 
+                    hdrs_out.append((b'mcp-session-id', temp_sid_tl.encode('utf-8')))
+                    authoritative_mcp_session_id = temp_sid_tl
+                
+                await send_wrapper({"type": "http.response.start", "status": 200, "headers": hdrs_out + [(b"content-type", b"application/json")]})
+                
+                tools_list_resp = {"jsonrpc": "2.0", "id": tools_list_json_rpc_id, "result": {"tools": [t.model_dump(exclude_none=True) for t in scoped_tools]}}
+                await send_wrapper({"type": "http.response.body", "body": json.dumps(tools_list_resp).encode("utf-8"), "more_body": False})
+            else:
+                # All other requests are handled by FastMCP
+                if not plexus_fastmcp_http_session_manager or not set_http_request_cm:
+                    await JSONResponse({"error":"MCP handler unavailable"}, status_code=503)(scope, receive, send)
+                    return
                 
                 if derived_persistent_user_id:
                     scope_for_mcp["state"]["derived_persistent_user_id"] = derived_persistent_user_id
                 
+                # Use FastMCP's request context manager for proper request handling
                 with set_http_request_cm(StarletteRequest(scope_for_mcp, receive_instrumented)):  
                      await plexus_fastmcp_http_session_manager.handle_request(
                          scope_for_mcp, receive_instrumented, send_wrapper
                      )
-                dispatch_logger.debug("FastMCP request handling completed")
-            except Exception as e_fmcp_handle_exc: 
-                request_handling_exception = e_fmcp_handle_exc 
-                dispatch_logger.error(f"FastMCP exception: {type(e_fmcp_handle_exc).__name__} - {e_fmcp_handle_exc}", exc_info=True)
-                
-                # Determine if this is a known/expected error type
-                is_cli_disc = "ClientDisconnect" in str(type(e_fmcp_handle_exc))
-                is_resp_done_err = "response already completed" in str(e_fmcp_handle_exc)
-                is_known_fmcp_err = "fastmcp.exceptions" in str(type(e_fmcp_handle_exc))
-
-                if not response_started:
-                    if is_cli_disc or is_resp_done_err:
-                        dispatch_logger.warning("Client/ASGI issue before response. Letting FastMCP/ASGI handle.")
-                    elif is_known_fmcp_err:
-                        dispatch_logger.warning("Known FastMCP error. Letting FastMCP format response.")
-                    else:
-                        dispatch_logger.info("Sending 500 for unexpected error")
-                        try:
-                            await JSONResponse({
-                                "error": "Internal Server Error", 
-                                "type": type(e_fmcp_handle_exc).__name__
-                            }, status_code=500)(scope, receive, send)
-                        except Exception as e_send500:
-                            dispatch_logger.error(f"Exception sending 500: {e_send500}", exc_info=True)
-                else:
-                    dispatch_logger.warning("FastMCP exception after response started. Cannot send new response.")
+        except Exception as e:
+            request_handling_exception = e
+            logger.error(f"Exception during MCP request processing: {e}", exc_info=True)
+            if not response_started:
+                error_response = JSONResponse(
+                    status_code=500,
+                    content={"error": "internal_server_error", "message": "An error occurred while processing the request."}
+                )
+                await error_response(scope, receive, send)
         finally:
-            # Session persistence and cleanup
-            dispatch_logger.debug(f"Request cleanup - Session ID: {authoritative_mcp_session_id}, User: {derived_persistent_user_id}")
-            
-            if session_data_for_this_dispatch:
-                # Ensure session data is aligned with authenticated user
-                if derived_persistent_user_id and session_data_for_this_dispatch.persistent_user_id != derived_persistent_user_id:
-                    session_data_for_this_dispatch.persistent_user_id = derived_persistent_user_id
-                    dispatch_logger.info("Aligned session user ID in cleanup")
-            
-            # Save session data
+            # Ensure session data is persisted after request processing
             if plexus_session_manager_instance and session_data_for_this_dispatch and authoritative_mcp_session_id:
+                # Ensure the MCP session ID on the data object matches the final one
                 if session_data_for_this_dispatch.mcp_session_id != authoritative_mcp_session_id:
                     session_data_for_this_dispatch.mcp_session_id = authoritative_mcp_session_id
-                    dispatch_logger.warning("Corrected session MCP session ID mismatch")
                 
                 try:
                     await plexus_session_manager_instance.save_session(session_data_for_this_dispatch)
-                    dispatch_logger.debug(f"Session data saved for MCP session {session_data_for_this_dispatch.mcp_session_id}")
                 except Exception as e:
-                    dispatch_logger.error(f"Exception during session save: {e}", exc_info=True)
-            elif not session_data_for_this_dispatch:
-                dispatch_logger.warning("No session data to save")
-            elif not authoritative_mcp_session_id:
-                dispatch_logger.warning("No authoritative MCP session ID for save")
-            
-            dispatch_logger.debug("Request processing completed")
+                    logger.error(f"Exception during session save in finally block: {e}", exc_info=True)
 
     async def get(self, req: StarletteRequest) -> ResponseHandled:
         await self._dispatch_mcp_request(self.scope, self.receive, self.send)
@@ -671,7 +583,7 @@ class PlexusMCPEndpoint(HTTPEndpoint):
         await self._dispatch_mcp_request(self.scope, self.receive, self.send)
         return ResponseHandled()
 
-# MCP routing configuration
+# MCP routing configuration - supports both token-based and header-based authentication
 mcp_starlette_router = StarletteRouter(routes=[
     Route("/{entity_id:str}/mcp/token_auth/{plexus_token_value:str}", PlexusMCPEndpoint),
     Route("/{entity_id:str}/mcp/token_auth/{plexus_token_value:str}/{mcp_path:path}", PlexusMCPEndpoint),
@@ -679,7 +591,7 @@ mcp_starlette_router = StarletteRouter(routes=[
     Route("/{entity_id:str}/mcp/{mcp_path:path}", PlexusMCPEndpoint),
 ])
 
-# FastAPI application setup
+# FastAPI application setup with lifespan management
 app = FastAPI(
     title=settings.app_name, 
     debug=settings.debug_mode, 
@@ -701,10 +613,11 @@ async def root_api():
 
 @app.get("/health")
 async def health_api():
-    """Health check endpoint that validates storage backend connectivity."""
+    """Health check endpoint that validates storage backend connectivity and service status."""
     store_statuses: Dict[str, str] = {}
     all_healthy = True
     
+    # Check SQLite database connectivity
     if settings.storage_backend == "sqlite":
         try:
             conn = await get_sqlite_db_connection()
@@ -714,6 +627,7 @@ async def health_api():
             store_statuses["sqlite_main_db"] = f"unhealthy: {e}"
             all_healthy = False
     
+    # Check Redis session store connectivity
     if plexus_session_manager_instance and isinstance(plexus_session_manager_instance.store, RedisPlexusSessionStore):
         try:
             redis_client = await plexus_session_manager_instance.store._get_client() 
@@ -729,7 +643,7 @@ async def health_api():
         "details": store_statuses
     }
 
-# Mount all routers
+# Mount all routers with appropriate prefixes and tags
 app.include_router(plexus_auth_router, prefix="/{entity_id}/plexus-auth", tags=["Plexus User Authentication"])
 app.include_router(plexus_internal_oauth_router, prefix="/{entity_id}/oauth", tags=["Plexus Internal OAuth 2.1"])
 app.include_router(tenants_admin_router) 

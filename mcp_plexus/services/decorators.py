@@ -1,3 +1,4 @@
+# mcp_plexus/services/decorators.py
 from __future__ import annotations
 import functools
 import logging
@@ -22,9 +23,9 @@ def requires_api_key(
     """
     Decorator that ensures an API key is available for a specific provider before executing a tool.
     
-    The decorator extracts the FastMCP context from the tool's arguments, creates a PlexusContext,
-    retrieves the API key for the specified provider, and injects it into the tool's kwargs.
-    If the API key is not found, raises a ToolError with structured error information.
+    This decorator validates API key availability and injects it into the function's kwargs.
+    It also attaches metadata to exclude the injected API key parameter from FastMCP's
+    tool schema generation.
     
     Args:
         provider_name: The name of the API provider (e.g., 'openai', 'anthropic')
@@ -45,12 +46,12 @@ def requires_api_key(
             # Extract FastMCPBaseContext from function arguments
             base_ctx_arg: Optional[FastMCPBaseContext] = None
             
-            # Check kwargs first for 'ctx' parameter
+            # Check kwargs first for context
             ctx_from_kwargs = kwargs.get('ctx')
             if isinstance(ctx_from_kwargs, FastMCPBaseContext):
                 base_ctx_arg = ctx_from_kwargs
             else:
-                # Fallback to searching positional arguments
+                # Fall back to checking positional arguments
                 for arg_val in args:
                     if isinstance(arg_val, FastMCPBaseContext):
                         base_ctx_arg = arg_val
@@ -62,14 +63,13 @@ def requires_api_key(
                     "message": f"Base context ('ctx') not found for tool '{func.__name__}'."
                 }))
 
-            # Ensure context has required fastmcp server instance
             if not hasattr(base_ctx_arg, 'fastmcp'):
                 raise ToolError(json.dumps({
                     "error": "internal_context_error", 
                     "message": f"Base context for tool '{func.__name__}' is missing server instance."
                 }))
 
-            # Create PlexusContext instance for API key management
+            # Create PlexusContext for API key management
             try:
                 plexus_ctx = PlexusContext(base_ctx_arg.fastmcp)
             except Exception as e:
@@ -78,7 +78,7 @@ def requires_api_key(
                     "message": f"Failed to instantiate PlexusContext for '{func.__name__}'. Details: {str(e)}"
                 }))
 
-            # Retrieve the API key for the specified provider
+            # Retrieve API key for the specified provider
             try:
                 api_key_value = await plexus_ctx.get_api_key(provider_name)
             except Exception as e:
@@ -88,7 +88,7 @@ def requires_api_key(
                 )
                 raise
 
-            # Raise structured error if API key is missing
+            # Validate API key availability and provide helpful error if missing
             if not api_key_value:
                 error_detail = PlexusApiKeyRequiredError(
                     provider_name=provider_name,
@@ -100,14 +100,18 @@ def requires_api_key(
                 error_json_string = json.dumps(error_detail)
                 raise ToolError(error_json_string)
 
-            # Inject API key into kwargs with sanitized parameter name
-            # Convert provider name to valid Python identifier format
-            sanitized_provider_name = provider_name.lower().replace('-', '_').replace(' ', '_')
-            kwarg_name = f"{sanitized_provider_name}_api_key"
+            # Inject API key into function kwargs with standardized naming
+            kwarg_name = f"{provider_name.lower().replace('-', '_')}_api_key"
             kwargs[kwarg_name] = api_key_value
 
-            # Execute original function with injected API key
             return await func(*args, **kwargs)
+        
+        # Attach metadata to exclude injected API key from schema generation
+        kwarg_name_to_exclude = f"{provider_name.lower().replace('-', '_')}_api_key"
+        if not hasattr(wrapper, '_plexus_exclude_args'):
+            setattr(wrapper, '_plexus_exclude_args', [])
             
-        return wrapper
+        getattr(wrapper, '_plexus_exclude_args').append(kwarg_name_to_exclude)
+            
+        return wrapper # type: ignore
     return decorator

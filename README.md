@@ -1,6 +1,6 @@
 # MCP Plexus: Secure, Multi-Tenant MCP Server Framework for Modern AI
 
-Build powerful, scalable, and secure Model Context Protocol (MCP) applications with ease. MCP Plexus is a Python framework built on the robust `jlowin/fastmcp` (FastMCP 2.4) library, designed to empower developers to deploy multi-tenant MCP servers that seamlessly integrate with external services via OAuth 2.1 and manage API key access for tools.
+Build powerful, scalable, and secure Model Context Protocol (MCP) applications with ease. MCP Plexus is a Python framework built on the robust `jlowin/fastmcp` (FastMCP 2.7) library, designed to empower developers to deploy multi-tenant MCP servers that seamlessly integrate with external services via OAuth 2.1 and manage API key access for tools.
 
 ---
 
@@ -8,7 +8,7 @@ Build powerful, scalable, and secure Model Context Protocol (MCP) applications w
 
 ### What is MCP Plexus?
 
-MCP Plexus extends the capabilities of FastMCP 2.4, providing a structured environment for creating sophisticated, multi-tenant AI backend systems. It allows you to define distinct, isolated environments (tenants) that can expose customized sets of tools, resources, and prompts to Large Language Models (LLMs) and AI agents.
+MCP Plexus extends the capabilities of FastMCP 2.7, providing a structured environment for creating sophisticated, multi-tenant AI backend systems. It allows you to define distinct, isolated environments (tenants) that can expose customized sets of tools, resources, and prompts to Large Language Models (LLMs) and AI agents.
 
 **Key differentiating features include:**
 
@@ -26,7 +26,7 @@ As AI applications grow in complexity, the need to securely provide LLMs with re
 - **Standardizing External API Access:** Provides a consistent and secure mechanism for tools to interact with OAuth-protected and API key-gated services.
 - **Enhancing User Experience:** Through persistent user authentication and token storage, it minimizes repeated login prompts to external services.
 - **Promoting Secure Practices:** Manages sensitive credentials (OAuth tokens, API keys) outside of your core tool logic.
-- **Leveraging FastMCP Power:** Builds upon the proven, high-performance FastMCP 2.4 library for core MCP protocol handling and its developer-friendly interface.
+- **Leveraging FastMCP Power:** Builds upon the proven, high-performance FastMCP 2.7 library for core MCP protocol handling and its developer-friendly interface.
 
 ### Core Philosophy
 
@@ -62,7 +62,7 @@ As AI applications grow in complexity, the need to securely provide LLMs with re
   - Injects the decrypted API key into the tool function at runtime.
   - Endpoint (`/{entity_id}/plexus-services/api-keys`) for users to submit their API keys.
 
-- **Standard MCP Server Capabilities (via FastMCP 2.4):**
+- **Standard MCP Server Capabilities (via FastMCP 2.7):**
   - Full support for defining MCP Tools, Resources, and Prompts using FastMCP's Pythonic decorators and classes (e.g., `PLEXUS_SERVER_INSTANCE.tool()`).
   - Native Streamable HTTP transport for MCP communication.
   - Access to `PlexusContext` (which extends `fastmcp.Context`) within tools/resources/prompts for logging, session data, and accessing authenticated clients or API keys.
@@ -176,10 +176,9 @@ MCP Plexus sits as an ASGI application (typically run with Uvicorn) and acts as 
   
     ADMIN_API_KEY=your_super_secret_admin_api_key_here_12345
   
-    PLEXUS_CLI_API_BASE_URL=http://127.0.0.1:8000
+    PLEXUS_CLI_API_BASE_URL=http://127.0.0.1:8080
   
     PLEXUS_ENCRYPTION_KEY=your_generated_fernet_key_here # see mcp_plexus/utils/generate_key.py
-
    ```
 
 5. **Initialize Database (if using SQLite):** 
@@ -322,11 +321,12 @@ async def get_greeting(ctx: FastMCPBaseContext) -> Dict[str, str]:
 @requires_auth(provider_name="github", scopes=["repo", "read:user"])
 async def get_my_github_repos(
     ctx: FastMCPBaseContext, 
-    authenticated_client: httpx.AsyncClient # Injected by @requires_auth
+    *,  # This enforces subsequent arguments as keyword-only
+    _authenticated_client: httpx.AsyncClient
 ) -> List[Dict[str, Any]]:
     plexus_ctx = PlexusContext(ctx.fastmcp)
     logger.info(f"Fetching GitHub repos for user '{plexus_ctx.persistent_user_id}' in entity '{plexus_ctx.entity_id}'")
-    response = await authenticated_client.get("https://api.github.com/user/repos")
+    response = await _authenticated_client.get("https://api.github.com/user/repos")
     response.raise_for_status()
     return response.json()
 
@@ -340,12 +340,13 @@ WEATHER_API_PROVIDER_NAME = "openweathermap"
 @requires_api_key(
     provider_name=WEATHER_API_PROVIDER_NAME,
     key_name_display="OpenWeatherMap API Key",
-    instructions="Please an API key for OpenWeatherMap."
+    instructions="Please provide an API key for OpenWeatherMap."
 )
 async def get_weather(
     ctx: FastMCPBaseContext, 
-    openweathermap_api_key: str, # Injected by @requires_api_key
-    city: str
+    city: str,
+    *,
+    openweathermap_api_key: str # Injected by @requires_api_key
 ) -> Dict[str, Any]:
     plexus_ctx = PlexusContext(ctx.fastmcp)
     logger.info(f"Fetching weather for {city} for user '{plexus_ctx.persistent_user_id}' in entity '{plexus_ctx.entity_id}' using provided API key.")
@@ -495,7 +496,7 @@ This section outlines the current implementation status and planned features.
 ### Implemented
 
 - [x] **Core Multi-Tenancy:** Basic tenant identification via URL (`/{entity_id}/mcp/`) and DB-backed validation.
-- [x] **FastMCP 2.4 Integration:** Uses `jlowin/fastmcp` for core MCP protocol (Streamable HTTP), tool/resource/prompt definitions.
+- [x] **FastMCP 2.7 Integration:** Uses `jlowin/fastmcp` for core MCP protocol (Streamable HTTP), tool/resource/prompt definitions.
 - [x] **Session Management:** Redis-backed MCP session store (`PlexusSessionManager`, `SessionData`).
 - [x] **Plexus User Authentication:** Host app user registration (`/{entity_id}/plexus-auth/register-user`) to get `plexus_user_auth_token` for linking to a `persistent_user_id`. MCP requests authenticated via Bearer token or URL token path.
 - [x] **External OAuth 2.1 Flow Facilitation:**

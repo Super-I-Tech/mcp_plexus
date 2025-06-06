@@ -1,13 +1,13 @@
 [project]
 name = "mcp_plexus"
-version = "0.2.1" # Match your app version or manage this better
+version = "0.2.6" # Match your app version or manage this better
 description = "MCP Plexus: Multi-Tenant, OAuth-Enabled MCP Server Framework"
 readme = "README.md"
 requires-python = ">=3.10" 
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
-    "fastmcp>=2.4.0", # Assuming a recent version, adjust as needed
+    "fastmcp>=2.7.0",
     "redis",
     "pydantic-settings",
     "python-dotenv",
