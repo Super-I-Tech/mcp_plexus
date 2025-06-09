@@ -189,7 +189,7 @@ class RedisOAuthTokenStore(AbstractOAuthTokenStore):
         ttl = int((token_data.expires_at - datetime.now(timezone.utc)).total_seconds())
         
         if ttl <= 0:
-            logger.warning(f"Access token '{token_data.access_token}' expired. Not saving.")
+            logger.warning("Access token expired. Not saving.")
             return
             
         client = await self._get_client()
@@ -208,7 +208,7 @@ class RedisOAuthTokenStore(AbstractOAuthTokenStore):
             try:
                 return AccessTokenData.model_validate_json(data_bytes.decode("utf-8"))
             except Exception as e:
-                logger.error(f"Error deserializing access token '{token}': {e}")
+                logger.error(f"Error deserializing access token: {e}")
                 return None
         return None
 
@@ -235,7 +235,7 @@ class RedisOAuthTokenStore(AbstractOAuthTokenStore):
             try:
                 return RefreshTokenData.model_validate_json(data_bytes.decode("utf-8"))
             except Exception as e:
-                logger.error(f"Error deserializing refresh token '{token}': {e}")
+                logger.error(f"Error deserializing refresh token: {e}")
                 return None
         return None
 
