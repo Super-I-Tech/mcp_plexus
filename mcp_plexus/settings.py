@@ -79,7 +79,7 @@ settings = Settings()
 # Log configuration values for debugging (sensitive values are masked)
 logger.info(
     f"SETTINGS.PY: Post-Settings() settings.host_app_registration_secret: "
-    f"'{settings.host_app_registration_secret}' (Type: {type(settings.host_app_registration_secret)})"
+    f"{'********' if settings.host_app_registration_secret else 'None'} (Type: {type(settings.host_app_registration_secret)})"
 )
 logger.info(
     f"SETTINGS.PY: Post-Settings() settings.debug_mode: "

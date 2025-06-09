@@ -232,7 +232,7 @@ class PlexusContext(FastMCPContext):
         
         logger.info(f"CONTEXT: Attempting token refresh for entity {entity_id}, user {persistent_user_id}, provider {provider_name}")
         refresh_token = token_info.get("refresh_token")
-        logger.debug(f"CONTEXT: Full token_info for refresh attempt of {provider_name}: {token_info}")
+        logger.debug(f"CONTEXT: Token info received for refresh attempt of {provider_name}.")
 
         if not refresh_token or not isinstance(refresh_token, str):
             logger.warning(f"CONTEXT: No refresh token found or not a string for provider {provider_name}. Cannot refresh. (Type: {type(refresh_token)})")
@@ -241,17 +241,17 @@ class PlexusContext(FastMCPContext):
         async with httpx.AsyncClient(timeout=20.0) as http_client: 
             try:
                 refresh_payload = {
-                    "grant_type": "refresh_token", 
+                    "grant_type": "refresh_token",
                     "refresh_token": refresh_token,
-                    "client_id": provider_settings.client_id, 
+                    "client_id": provider_settings.client_id,
                     "client_secret": provider_settings.client_secret,
                 }
-                logger.debug(f"CONTEXT: Refresh token payload for {provider_name}: {refresh_payload}")
+                logger.debug(f"CONTEXT: Refresh token payload prepared for {provider_name}.")
                 response = await http_client.post(str(provider_settings.token_url), data=refresh_payload)
                 logger.info(f"CONTEXT: Token refresh API for {provider_name} responded with status: {response.status_code}")
                 response.raise_for_status() 
                 new_token_data_raw = response.json()
-                logger.info(f"CONTEXT: Token refresh successful for provider {provider_name}. Raw Response: {new_token_data_raw}")
+                logger.info(f"CONTEXT: Token refresh successful for provider {provider_name}.")
 
                 access_token = new_token_data_raw.get("access_token")
                 if not access_token:

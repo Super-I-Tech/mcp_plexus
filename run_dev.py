@@ -31,7 +31,8 @@ if __name__ == "__main__":
                       "Will rely on OS environment variables or pydantic-settings defaults.")
 
     # Log key environment variables for verification
-    logger.info(f"HOST_APP_REGISTRATION_SECRET: {os.getenv('HOST_APP_REGISTRATION_SECRET')}")
+    _secret_val = os.getenv('HOST_APP_REGISTRATION_SECRET')
+    logger.info(f"HOST_APP_REGISTRATION_SECRET: {'********' if _secret_val else 'None'}")
     logger.info(f"DEBUG_MODE: {os.getenv('DEBUG_MODE')}")
     logger.info(f"STORAGE_BACKEND: {os.getenv('STORAGE_BACKEND')}")
     logger.info(f"REDIS_HOST: {os.getenv('REDIS_HOST')}")

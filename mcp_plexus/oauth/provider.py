@@ -352,12 +352,12 @@ class PlexusOAuthProvider:
         # Load and validate authorization code
         auth_code_data = await self.auth_code_store.load_auth_code(token_request.code)
         if not auth_code_data:
-            logger.warning(f"Invalid authorization code: {token_request.code} (not found).")
+            logger.warning("Invalid authorization code (not found).")
             raise InvalidGrantError("Invalid authorization code.")
 
         # Check code expiration
         if auth_code_data.expires_at < datetime.now(timezone.utc):
-            logger.warning(f"Expired authorization code: {token_request.code}.")
+            logger.warning("Expired authorization code.")
             await self.auth_code_store.delete_auth_code(token_request.code)
             raise InvalidGrantError("Authorization code has expired.")
         
@@ -372,7 +372,7 @@ class PlexusOAuthProvider:
         # Validate redirect URI matches
         if str(token_request.redirect_uri) != str(auth_code_data.redirect_uri):
             logger.warning(
-                f"Redirect URI mismatch for code {token_request.code}. "
+                "Redirect URI mismatch for authorization code. "
                 f"Expected {auth_code_data.redirect_uri}, got {token_request.redirect_uri}."
             )
             raise InvalidGrantError("Redirect URI mismatch.")
@@ -399,19 +399,16 @@ class PlexusOAuthProvider:
                 auth_code_data.code_challenge_method
             )
             if expected_challenge != auth_code_data.code_challenge:
-                logger.warning(f"PKCE verification failed for code {token_request.code}.")
+                logger.warning("PKCE verification failed for authorization code.")
                 await self.auth_code_store.delete_auth_code(token_request.code)
                 raise InvalidGrantError("PKCE verification failed: Invalid code_verifier.")
         elif auth_code_data.code_challenge_method == "plain":
             if token_request.code_verifier != auth_code_data.code_challenge:
-                logger.warning(f"PKCE (plain) verification failed for code {token_request.code}.")
+                logger.warning("PKCE (plain) verification failed for authorization code.")
                 await self.auth_code_store.delete_auth_code(token_request.code)
                 raise InvalidGrantError("PKCE (plain) verification failed: Invalid code_verifier.")
         else:
-            logger.error(
-                f"Auth code {token_request.code} missing valid PKCE challenge data "
-                f"from authorization phase."
-            )
+            logger.error("Auth code missing valid PKCE challenge data from authorization phase.")
             await self.auth_code_store.delete_auth_code(token_request.code)
             raise ServerError("Internal server error: PKCE data inconsistency.")
 
@@ -477,7 +474,7 @@ class PlexusOAuthProvider:
         # Load and validate refresh token
         rt_data = await self.token_store.load_refresh_token(token_request.refresh_token)
         if not rt_data:
-            logger.warning(f"Invalid refresh token: {token_request.refresh_token} (not found).")
+            logger.warning("Invalid refresh token (not found).")
             raise InvalidGrantError("Invalid refresh token.")
         
         # Validate client ID matches
